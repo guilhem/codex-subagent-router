@@ -1,0 +1,17 @@
+{
+  "description": "Route unpinned native agent spawns through configured Jev Choice profiles.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^spawn_agent$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${PLUGIN_ROOT}/scripts/jev_router.py\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}
