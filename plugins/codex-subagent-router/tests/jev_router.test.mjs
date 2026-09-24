@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { appendFile, mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -14,6 +14,9 @@ const event = (tool_input = { message: 'Run tests' }, changes = {}) => ({
 });
 const profile = (description = 'Implement or test code', model = 'custom/model-42', reasoning_effort = 'high') =>
   ({ description, model, reasoning_effort });
+const unavailable = reason => `Jev routing unavailable (${reason}); using native spawn defaults.`;
+const log = async (home = process.env.CODEX_HOME) =>
+  (await readFile(join(home, 'subagent-router', 'decisions.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
 const answer = (profiles, selected = 'build') => ({
   model: MODEL,
   answers: { route: {
@@ -69,12 +72,14 @@ test('direct executable keeps native defaults for missing key and malformed Unic
   assert.equal(normal.error, undefined);
   assert.equal(normal.status, 0);
   assert.equal(normal.stdout, '');
-  assert.match(normal.stderr, /Jev routing unavailable; using native spawn defaults\./);
+  assert.equal(normal.stderr, `${unavailable('no_key')}\n`);
   const malformed = run(Buffer.from([0x7b, 0x22, 0xff, 0x22, 0x7d]));
   assert.equal(malformed.error, undefined);
   assert.equal(malformed.status, 0);
   assert.equal(malformed.stdout, '');
-  assert.equal(malformed.stderr, '');
+  assert.equal(malformed.stderr, 'Subagent router input invalid; using native spawn defaults.\n');
+  assert.deepEqual((await log(home)).map(entry => [entry.outcome, entry.reason]), [['error', 'no_key'], ['error', 'invalid_input']]);
+  if (process.platform !== 'win32') assert.equal((await stat(join(home, 'subagent-router', 'decisions.jsonl'))).mode & 0o777, 0o600);
 });
 
 test('main preserves native input and prints chosen input', async t => {
@@ -90,16 +95,20 @@ test('main preserves native input and prints chosen input', async t => {
   delete process.env.TYPESAFE_API_KEY;
   await run(Buffer.from(JSON.stringify(event())));
   assert.deepEqual(output, []);
-  assert.deepEqual(warnings, ['Jev routing unavailable; using native spawn defaults.']);
+  assert.deepEqual(warnings, [unavailable('no_key')]);
   await run(Buffer.from([0x7b, 0x22, 0xff, 0x22, 0x7d]));
   assert.deepEqual(output, []);
-  assert.equal(warnings.length, 1);
+  assert.equal(warnings[1], 'Subagent router input invalid; using native spawn defaults.');
   process.env.TYPESAFE_API_KEY = 'key';
   const profiles = await loadProfiles();
-  transport(t, [{ status: 200, body: answer(profiles) }]);
+  transport(t, Array(2).fill({ status: 200, body: answer(profiles) }));
   await run(Buffer.from(JSON.stringify(event())));
   assert.deepEqual(JSON.parse(output[0]).hookSpecificOutput.updatedInput,
     { message: 'Run tests', model: 'custom/model-42', reasoning_effort: 'high' });
+  write.mock.mockImplementation(() => { throw new Error('SECRET pipe'); });
+  await run(Buffer.from(JSON.stringify(event())));
+  assert.equal(warnings.at(-1), unavailable('output_error'));
+  assert.deepEqual((await log()).slice(-2).map(entry => entry.reason), ['selected', 'output_error']);
   write.mock.restore();
 });
 
@@ -120,9 +129,12 @@ test('explicit pins and unrelated inputs skip catalog and provider', async t => 
   const requests = transport(t, []);
   for (const input of inputs) assert.equal(await route(input), null);
   assert.deepEqual(warnings, []);
+  assert.deepEqual((await log()).map(entry => entry.reason),
+    ['no_mission', 'pinned', 'pinned', 'pinned', 'pinned', 'no_mission', 'no_mission', 'no_mission', 'no_mission']);
   process.env.CODEX_HOME = join(process.env.CODEX_HOME, 'missing');
   assert.equal(await route(event()), null);
   assert.deepEqual(warnings, []);
+  assert.deepEqual((await log()).map(entry => entry.reason), ['no_catalog']);
   assert.equal(requests.length, 0);
   assert.equal(missionFrom({ items: [{ type: 'text', text: ' Implement' }, { type: 'text', text: 'tests ' }] }), 'Implement\ntests');
 });
@@ -162,7 +174,7 @@ test('missing, empty, unreadable, and malformed file keys keep native defaults p
   await rm(key);
   await mkdir(key);
   assert.equal(await route(event()), null);
-  assert.deepEqual(warnings, Array(4).fill('Jev routing unavailable; using native spawn defaults.'));
+  assert.deepEqual(warnings, Array(4).fill(unavailable('no_key')));
   assert.doesNotMatch(warnings.join(' '), /SECRET-file-key|api-key/);
   assert.equal(requests.length, 0);
 });
@@ -174,7 +186,7 @@ test('fresh profiles, SDK request, preserved input, defer, and special profile I
   let selected = 'build';
   const response = { status: 200, get body() { return answer(new Map(Object.entries(requests.at(-1).body.questions.route.criteria)), selected); } };
   const requests = transport(t, Array(4).fill(response));
-  const result = await route(event(original));
+  const result = await route(event(original, { session_id: 'session-1', tool_use_id: 'call-1' }));
   assert.deepEqual(result.hookSpecificOutput.updatedInput, { ...original, model: 'custom/model-42', reasoning_effort: 'high' });
   assert.equal(original.model, null);
   assert.equal(requests[0].url, 'https://api.typesafe.ai/v1/systemone');
@@ -193,6 +205,51 @@ test('fresh profiles, SDK request, preserved input, defer, and special profile I
   assert.equal((await route(event())).hookSpecificOutput.updatedInput.model, 'updated/model');
   selected = 'defer';
   assert.equal(await route(event()), null);
+  assert.deepEqual(warnings, []);
+  const entries = await log();
+  assert.ok(entries.every(entry => !Number.isNaN(Date.parse(entry.ts)) && Number.isInteger(entry.duration_ms)));
+  assert.deepEqual(entries.map(({ ts, duration_ms, ...entry }) => entry), [
+    { outcome: 'routed', reason: 'selected', session_id: 'session-1', tool_use_id: 'call-1',
+      profile: 'build', model: 'custom/model-42', reasoning_effort: 'high', confidence: 0.85 },
+    { outcome: 'routed', reason: 'selected', profile: '__proto__', model: 'special/model', reasoning_effort: 'max', confidence: 0.85 },
+    { outcome: 'routed', reason: 'selected', profile: 'build', model: 'updated/model', reasoning_effort: 'low', confidence: 0.85 },
+    { outcome: 'deferred', reason: 'defer', confidence: 0.85 },
+  ]);
+});
+
+test('decision log failure keeps the decision and warns briefly', async t => {
+  const { dir, warnings } = await fixture(t);
+  await mkdir(join(dir, 'decisions.jsonl'));
+  transport(t, [{ status: 200, body: answer(await loadProfiles()) }]);
+  assert.equal((await route(event())).hookSpecificOutput.updatedInput.model, 'custom/model-42');
+  assert.deepEqual(warnings, ['Subagent router decision log unavailable (EISDIR).']);
+});
+
+test('decision log rotates near 1 MiB into one private backup', async t => {
+  const { dir, warnings } = await fixture(t);
+  const file = join(dir, 'decisions.jsonl');
+  const limit = 1024 * 1024;
+  // Fill the log to 10 bytes below the limit with one valid JSON line, so the next event rotates it.
+  const fill = async marker => {
+    const { size } = await stat(file);
+    await appendFile(file, `${JSON.stringify({ filler: marker.padEnd(limit - 10 - size - 14, 'x') })}\n`);
+    assert.equal((await stat(file)).size, limit - 10);
+  };
+  const lines = async path => (await readFile(path, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+  transport(t, Array(3).fill({ status: 200, body: answer(await loadProfiles()) }));
+  const routed = async () => assert.equal((await route(event())).hookSpecificOutput.updatedInput.model, 'custom/model-42');
+  await routed();
+  await fill('first');
+  await routed();
+  await fill('second');
+  await routed();
+  const backup = await lines(`${file}.1`);
+  assert.deepEqual(backup.map(entry => entry.reason ?? entry.filler.slice(0, 6)), ['selected', 'second']);
+  assert.deepEqual((await lines(file)).map(entry => entry.reason), ['selected']);
+  for (const path of [file, `${file}.1`]) {
+    assert.ok((await stat(path)).size <= limit);
+    if (process.platform !== 'win32') assert.equal((await stat(path)).mode & 0o777, 0o600);
+  }
   assert.deepEqual(warnings, []);
 });
 
@@ -224,6 +281,9 @@ test('empty, invalid, reserved, malformed UTF-8, and excessive catalogs never ca
   assert.equal(await route(event()), null);
   assert.match(warnings.at(-1), /more than 254 profiles/);
   assert.equal(requests.length, 0);
+  const reasons = (await log()).map(entry => entry.reason);
+  assert.deepEqual(reasons, ['no_catalog', ...Array(invalid.length + 1).fill('catalog_invalid')]);
+  assert.doesNotMatch(JSON.stringify(await log()), /SECRET/);
 });
 
 test('254 profiles plus defer are sent and chosen safely', async t => {
@@ -269,7 +329,7 @@ test('response validation rejects malformed probabilities, confidence, model, an
   });
   transport(t, responses);
   for (const _ of mutations) assert.equal(await route(event()), null);
-  assert.equal(warnings.length, mutations.length);
+  assert.deepEqual(warnings, Array(mutations.length).fill(unavailable('invalid_response')));
 });
 
 test('real SDK handles 403, retries 503, and keeps remote errors out of diagnostics', async t => {
@@ -285,8 +345,8 @@ test('real SDK handles 403, retries 503, and keeps remote errors out of diagnost
   assert.equal(requests.length, 3);
   assert.equal(await route(event()), null);
   assert.equal(requests.length, 6);
-  assert.equal(warnings.length, 2);
-  assert.doesNotMatch(warnings.join(' '), /SECRET/);
+  assert.deepEqual(warnings, [unavailable('http_403'), unavailable('http_503')]);
+  assert.doesNotMatch(await readFile(join(process.env.CODEX_HOME, 'subagent-router', 'decisions.jsonl'), 'utf8'), /SECRET|Run tests/);
 });
 
 test('whole-call timeout aborts the SDK during a pending fetch', async t => {
@@ -302,5 +362,5 @@ test('whole-call timeout aborts the SDK during a pending fetch', async t => {
   assert.equal(await route(event()), null);
   assert.deepEqual(budgets, [10_000]);
   assert.equal(attempts, 1);
-  assert.deepEqual(warnings, ['Jev routing unavailable; using native spawn defaults.']);
+  assert.deepEqual(warnings, [unavailable('timeout')]);
 });

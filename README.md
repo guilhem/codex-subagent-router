@@ -12,7 +12,7 @@ AI model routing for native Codex subagents, powered by Jev and your task profil
 [![Powered by Jev](https://img.shields.io/badge/powered_by-Jev-8B5CF6)](https://docs.typesafe.ai)
 [![License: MIT](https://img.shields.io/badge/license-MIT-22C55E)](LICENSE)
 
-[Quickstart](#quickstart) · [How it works](#how-it-works) · [Task profiles](#task-profiles) · [Routing behavior](#routing-behavior) · [Contributing](#development--contributing)
+[Quickstart](#quickstart) · [How it works](#how-it-works) · [Task profiles](#task-profiles) · [Routing behavior](#routing-behavior) · [Decision log](#decision-log) · [Contributing](#development--contributing)
 
 </div>
 
@@ -170,8 +170,8 @@ needed.
 | Jev returns `defer` | Keeps native inheritance/defaults. |
 
 One invalid profile invalidates the catalog for that call; the router never
-silently uses only part of it. Diagnostics omit profile contents, missions, and
-credentials.
+silently uses only part of it. Diagnostics and the decision log omit profile
+descriptions, missions, credentials, and remote error messages.
 
 <details>
 <summary><strong>Limits and retries</strong></summary>
@@ -187,13 +187,65 @@ is applied.
 <details>
 <summary><strong>Routing not taking effect?</strong></summary>
 
-Check that the hook is trusted, the API key reaches the Codex process, a Node
-runtime is available to the hook, and at least one valid profile exists in the
-active `CODEX_HOME`. Inspect the spawn arguments for explicit model, effort, or
-agent type values. Native defaults are the expected fallback when routing cannot
-run or Jev defers.
+Start with the [decision log](#decision-log): its `reason` names the cause. If a
+delegation has no event, check that the hook is trusted and a Node runtime is
+available, whether the hook was interrupted, and whether stderr reported a log
+write warning. Native defaults are the expected fallback when routing cannot run
+or Jev defers.
 
 </details>
+
+## Decision log
+
+The hook appends JSON events for each `spawn_agent` call it evaluates to
+`$CODEX_HOME/subagent-router/decisions.jsonl` (`~/.codex/subagent-router/`
+when `CODEX_HOME` is unset or empty), one event per line. The file is created
+private (`0600`).
+
+```sh
+log="${CODEX_HOME:-$HOME/.codex}/subagent-router/decisions.jsonl"
+tail -F "$log" | jq -c .                        # follow live decisions across rotations
+cat "$log.1" "$log" 2>/dev/null |
+  jq -c 'select(.outcome == "error")'           # routing failures, backup included
+```
+
+```json
+{"ts":"2026-09-24T10:00:00.000Z","outcome":"routed","reason":"selected","duration_ms":812,"session_id":"…","tool_use_id":"…","profile":"myteam-implementation","model":"gpt-6-sol","reasoning_effort":"high","confidence":0.85}
+```
+
+| `outcome` | `reason` | Meaning |
+| --- | --- | --- |
+| `routed` | `selected` | Jev chose `profile` with `model` and `reasoning_effort`. |
+| `deferred` | `defer` | Jev found no fitting profile; native defaults apply. |
+| `skipped` | `pinned` | The spawn already set `model`, `reasoning_effort`, or `agent_type`. |
+| `skipped` | `no_mission` | No text `message` or text-only `items` to route. |
+| `skipped` | `no_catalog` | No profile files exist. |
+| `error` | `catalog_invalid` | A profile file is invalid; stderr names the problem. |
+| `error` | `no_key` | No API key was found. |
+| `error` | `http_<status>`, `timeout`, `connection`, `sdk_error` | The TypeSafe request failed. |
+| `error` | `invalid_response` | TypeSafe answered with an unusable response. |
+| `error` | `output_error` | A profile was selected, but writing the hook output failed. |
+| `error` | `invalid_input`, `internal_error` | The hook could not read its input or failed before a decision. |
+
+Routing errors are non-blocking and also print a short diagnostic to stderr.
+`confidence` is Jev's reported confidence. `session_id` and `tool_use_id`
+come from the Codex hook input and correlate an event with its session and spawn
+call. If the log cannot be written, the routing result is unchanged and stderr says
+`Subagent router decision log unavailable`.
+
+A `routed` event records the profile Jev **selected**; it is written before the
+hook output is sent and does not prove Codex received or applied it. An
+`output_error` event can follow for the same call (same `tool_use_id`). The
+subagent's own session shows the model Codex actually applied; neither proves
+which provider served it. A hook that never starts (untrusted, no Node runtime)
+writes no event; one that is killed (for example by the 15-second Codex timeout)
+may leave no event.
+
+When the next event would take `decisions.jsonl` past 1 MiB, the router renames
+it to `decisions.jsonl.1`, replacing the previous backup, and starts a new file.
+The log therefore stays around 2 MiB. Hooks running at the same moment can push
+the current file slightly past 1 MiB, or rotate twice and replace the backup
+sooner. Both files can be deleted at any time.
 
 ## Development & contributing
 
