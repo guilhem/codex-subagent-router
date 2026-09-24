@@ -1,0 +1,28 @@
+#!/bin/sh
+set -eu
+
+# Use the runtime discovery order used by Codex's bundled plugin launchers.
+router=${0%/*}/../dist/jev_router.mjs
+cache_root=${XDG_CACHE_HOME:-${HOME:-}/.cache}
+codex_resources=
+case "${CODEX_CLI_PATH:-}" in
+  */*) codex_resources=${CODEX_CLI_PATH%/*} ;;
+esac
+
+for candidate in \
+  "${CODEX_MCP_NODE_PATH:-}" \
+  "${CODEX_BROWSER_USE_NODE_PATH:-}" \
+  "${CODEX_ELECTRON_RESOURCES_PATH:+$CODEX_ELECTRON_RESOURCES_PATH/cua_node/bin/node}" \
+  "${codex_resources:+$codex_resources/cua_node/bin/node}" \
+  "$cache_root/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node"
+do
+  if [ -n "$candidate" ] && [ -f "$candidate" ] && [ -x "$candidate" ]; then
+    exec "$candidate" "$router" "$@"
+  fi
+done
+
+if command -v node >/dev/null 2>&1; then
+  exec node "$router" "$@"
+fi
+
+printf '%s\n' 'Jev routing unavailable: Node.js 20+ not found. Update Codex Desktop or install Node.js 20+ for the CLI; using native spawn defaults.' >&2
