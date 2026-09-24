@@ -50,9 +50,19 @@ is available. The launcher checks Codex's runtime locations before the system
 ### 2. Set your API key
 
 Create a plain-text file named `api-key` in `$CODEX_HOME/subagent-router/`, or
-`~/.codex/subagent-router/` when `CODEX_HOME` is unset or empty. Put only your
-TypeSafe API key in it, using an editor so the key does not enter shell history.
-On Linux and macOS, restrict the file to your user with `chmod 600`.
+`~/.codex/subagent-router/` when `CODEX_HOME` is unset or empty. In Bash
+(Linux/macOS), paste this block, then enter your key at the hidden prompt:
+
+```bash
+router_dir="${CODEX_HOME:-$HOME/.codex}/subagent-router"
+mkdir -p "$router_dir" &&
+(read -rsp 'TypeSafe API key: ' key && [ -n "$key" ] &&
+  install -m 600 /dev/null "$router_dir/api-key" &&
+  printf '%s\n' "$key" > "$router_dir/api-key")
+```
+
+The key is not echoed or saved in shell history. The file is readable and
+writable only by your user (`0600`); empty input leaves an existing key unchanged.
 
 Alternatively, set `TYPESAFE_API_KEY` or `JEV_API_KEY` in the environment of
 the process that launches Codex. The router uses the first nonempty value in
