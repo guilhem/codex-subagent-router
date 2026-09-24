@@ -68,7 +68,8 @@ function fixture(t) {
   function run(extraEnv = {}, input = event, pluginRoot = installed) {
     const command = handler[windows ? 'commandWindows' : 'command'].replaceAll('${PLUGIN_ROOT}', pluginRoot);
     return spawnSync(shell, windows ? ['/d', '/s', '/c', `"${command}"`] : ['-c', command], {
-      cwd: root, env: { ...env, ...extraEnv }, input: JSON.stringify(input), encoding: 'utf8',
+      cwd: root, env: Object.fromEntries(Object.entries({ ...env, ...extraEnv }).filter(([, value]) => value !== undefined)),
+      input: JSON.stringify(input), encoding: 'utf8',
       timeout: 5_000, windowsVerbatimArguments: windows,
     });
   }
@@ -92,8 +93,16 @@ function placeNode(path) {
 }
 
 test('installed bundle and SDK run with only the Codex runtime and preserve explicit pins', t => {
-  const { run } = fixture(t);
+  const { env, run } = fixture(t);
   expectRoute(run({ CODEX_MCP_NODE_PATH: process.execPath }));
+  writeFileSync(join(env.CODEX_HOME, 'subagent-router', 'api-key'), '  test-secret\n');
+  expectRoute(run({ CODEX_MCP_NODE_PATH: process.execPath, TYPESAFE_API_KEY: undefined, JEV_API_KEY: undefined }));
+  const defaultCatalog = join(env.HOME, '.codex', 'subagent-router');
+  mkdirSync(defaultCatalog, { recursive: true });
+  copyFileSync(join(env.CODEX_HOME, 'subagent-router', 'build.json'), join(defaultCatalog, 'build.json'));
+  writeFileSync(join(defaultCatalog, 'api-key'), 'test-secret\n');
+  expectRoute(run({ CODEX_MCP_NODE_PATH: process.execPath, CODEX_HOME: undefined, TYPESAFE_API_KEY: undefined }));
+  expectRoute(run({ CODEX_MCP_NODE_PATH: process.execPath, CODEX_HOME: '~/.codex', TYPESAFE_API_KEY: undefined }));
   const pinned = run({ CODEX_MCP_NODE_PATH: process.execPath }, {
     ...event, tool_input: { message: 'Must not call the provider', model: 'explicit' },
   });

@@ -660,9 +660,12 @@ var DEFER = "The mission lacks enough information to select a profile, or no pro
 var unavailable = () => console.error("Jev routing unavailable; using native spawn defaults.");
 var object = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 var decode = (bytes) => new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-async function loadProfiles() {
+function routerDirectory() {
   const home = process.env.CODEX_HOME || join(homedir(), ".codex");
-  const directory = join(home === "~" ? homedir() : home.startsWith("~/") ? join(homedir(), home.slice(2)) : home, "subagent-router");
+  return join(home === "~" ? homedir() : home.startsWith("~/") ? join(homedir(), home.slice(2)) : home, "subagent-router");
+}
+async function loadProfiles() {
+  const directory = routerDirectory();
   let entries;
   try {
     entries = await readdir(directory, { withFileTypes: true });
@@ -745,7 +748,13 @@ async function route(event) {
   if (!mission) return null;
   const profiles = await loadProfiles();
   if (!profiles) return null;
-  const apiKey = process.env.TYPESAFE_API_KEY || process.env.JEV_API_KEY;
+  let apiKey = process.env.TYPESAFE_API_KEY || process.env.JEV_API_KEY;
+  if (!apiKey) {
+    try {
+      apiKey = decode(await readFile(join(routerDirectory(), "api-key"))).trim();
+    } catch {
+    }
+  }
   if (!apiKey) {
     unavailable();
     return null;
