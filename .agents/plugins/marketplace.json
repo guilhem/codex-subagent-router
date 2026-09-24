@@ -1,0 +1,20 @@
+{
+  "name": "codex-subagent-router",
+  "interface": {
+    "displayName": "Codex Subagent Router"
+  },
+  "plugins": [
+    {
+      "name": "codex-subagent-router",
+      "source": {
+        "source": "local",
+        "path": "./plugins/codex-subagent-router"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

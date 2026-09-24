@@ -1,0 +1,24 @@
+{
+  "name": "codex-subagent-router",
+  "version": "0.1.0",
+  "description": "Choose native subagent models with Jev and declarative task profiles.",
+  "author": {
+    "name": "guilhem",
+    "url": "https://github.com/guilhem"
+  },
+  "interface": {
+    "displayName": "Codex Subagent Router",
+    "shortDescription": "Route unpinned subagents through configurable Jev choices.",
+    "longDescription": "A native PreToolUse hook reads task profiles from CODEX_HOME/subagent-router and asks Jev to choose model and effort. Explicit settings remain authoritative.",
+    "developerName": "guilhem",
+    "category": "Productivity",
+    "capabilities": [],
+    "websiteURL": "https://github.com/guilhem/codex-subagent-router",
+    "defaultPrompt": [
+      "Delegate this task using the configured subagent routing profiles."
+    ]
+  },
+  "homepage": "https://github.com/guilhem/codex-subagent-router#readme",
+  "repository": "https://github.com/guilhem/codex-subagent-router",
+  "license": "MIT"
+}
