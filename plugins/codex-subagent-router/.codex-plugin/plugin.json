@@ -1,6 +1,6 @@
 {
   "name": "codex-subagent-router",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "AI model routing for Codex subagents. Let Jev choose the model and reasoning effort for each mission, using your own task profiles.",
   "author": {
     "name": "guilhem",

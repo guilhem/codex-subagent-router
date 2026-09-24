@@ -7,7 +7,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${PLUGIN_ROOT}/scripts/jev_router.py\"",
+            "command": "sh \"${PLUGIN_ROOT}/scripts/launch_router\"",
+            "commandWindows": "\"${PLUGIN_ROOT}\\scripts\\launch_router.cmd\"",
             "timeout": 15
           }
         ]

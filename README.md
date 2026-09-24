@@ -7,7 +7,7 @@
 AI model routing for native Codex subagents, powered by Jev and your task profiles.
 
 [![Verify](https://github.com/guilhem/codex-subagent-router/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/guilhem/codex-subagent-router/actions/workflows/verify.yml)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)](#quickstart)
+[![Node.js 20+](https://img.shields.io/badge/node.js-20%2B-339933?logo=node.js&logoColor=white)](#quickstart)
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-111827)](plugins/codex-subagent-router/.codex-plugin/plugin.json)
 [![Powered by Jev](https://img.shields.io/badge/powered_by-Jev-8B5CF6)](https://docs.typesafe.ai)
 [![License: MIT](https://img.shields.io/badge/license-MIT-22C55E)](LICENSE)
@@ -30,19 +30,22 @@ without an explicit model, reasoning effort, or agent type.
 
 ## Quickstart
 
-You need a Codex host with native `spawn_agent` and plugin `PreToolUse` support,
-**Python 3.10+**, and a **TypeSafe API key**. The models and reasoning efforts in
-your profiles must be available on your Codex host.
+You need a Codex host with native `spawn_agent` and plugin `PreToolUse` support
+and a **TypeSafe API key**. The models and reasoning efforts in your profiles
+must be available on your Codex host.
 
 ### 1. Install the plugin
 
 ```sh
 codex plugin marketplace add guilhem/codex-subagent-router --ref main
 codex plugin add codex-subagent-router@codex-subagent-router
-python3 -m pip install 'typesafe-sdk==0.7.1'
 ```
 
-Install the SDK in the Python environment used by the hook's `python3` command.
+The plugin includes the TypeSafe SDK in a ready-to-run JavaScript bundle.
+Codex Desktop supplies its Node runtime; there is no Python, npm, or SDK to
+install. With standalone Codex CLI, have Node.js 20+ on `PATH` if no Codex runtime
+is available. The launcher checks Codex's runtime locations before the system
+`node`; `CODEX_MCP_NODE_PATH` can point to a Node executable when needed.
 
 ### 2. Set your API key
 
@@ -151,7 +154,7 @@ needed.
 | Explicit non-null `model`, `reasoning_effort`, or `agent_type` | Bypasses routing, catalog reads, and provider calls. |
 | Valid catalog, credentials, and an unpinned text mission | Jev selects a profile or returns `defer`. |
 | Empty, invalid, or oversized catalog | Keeps native inheritance/defaults; no provider call. |
-| Missing SDK/key, provider failure, or invalid response | Keeps native inheritance/defaults. |
+| Missing runtime/key, provider failure, or invalid response | Keeps native inheritance/defaults. |
 | Jev returns `defer` | Keeps native inheritance/defaults. |
 
 One invalid profile invalidates the catalog for that call; the router never
@@ -164,7 +167,7 @@ credentials.
 The catalog supports up to **254 profiles plus `defer`**, within the
 [255-option Choice limit](https://docs.typesafe.ai/primitives/choice). Larger
 catalogs fall back without truncation. The SDK has at most two retries within a
-10-second retry budget; Codex caps the hook at 15 seconds. No confidence threshold
+10-second total request budget; Codex caps the hook at 15 seconds. No confidence threshold
 is applied.
 
 </details>
@@ -172,8 +175,8 @@ is applied.
 <details>
 <summary><strong>Routing not taking effect?</strong></summary>
 
-Check that the hook is trusted, the API key reaches the Codex process, the hook's
-`python3` can import `typesafe_sdk`, and at least one valid profile exists in the
+Check that the hook is trusted, the API key reaches the Codex process, a Node
+runtime is available to the hook, and at least one valid profile exists in the
 active `CODEX_HOME`. Inspect the spawn arguments for explicit model, effort, or
 agent type values. Native defaults are the expected fallback when routing cannot
 run or Jev defers.
@@ -185,17 +188,25 @@ run or Jev defers.
 From a repository checkout:
 
 ```sh
-python3 -m pip install -r plugins/codex-subagent-router/requirements.txt
-python3 -B -m unittest discover -s plugins/codex-subagent-router/tests
+npm ci
+npm run build
+npm test
+npm run check:dist
 git diff --check
 ```
+
+Development requires Node.js 20+ and npm. Commit the generated
+`plugins/codex-subagent-router/dist/jev_router.mjs` alongside source changes.
+`check:dist` rebuilds in memory and rejects a stale bundle. The bundle includes
+the project and SDK license notices; it runs without `node_modules` and does not
+download dependencies at startup.
 
 To test a checkout as a plugin, add its absolute repository path as a marketplace
 and install `codex-subagent-router@codex-subagent-router`. Use an isolated
 `CODEX_HOME` for tests that add profiles or change hook trust.
 
 [Bug reports](https://github.com/guilhem/codex-subagent-router/issues) and focused
-pull requests are welcome. Include your Codex/Python versions and a minimal
+pull requests are welcome. Include your Codex/Node versions and a minimal
 example with credentials and private mission content removed.
 
 ## License & credits
@@ -204,4 +215,4 @@ example with credentials and private mission content removed.
 [Astra Advisor PR #12](https://github.com/guilhem/astra-advisor/pull/12), with the
 small MIT-licensed adapter attribution to
 [jev_codex](https://github.com/Madikhan33/jev_codex). Powered by the
-[TypeSafe Python SDK](https://pypi.org/project/typesafe-sdk/).
+[TypeSafe JavaScript SDK](https://www.npmjs.com/package/@typesafe-ai/sdk).
