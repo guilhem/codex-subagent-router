@@ -2,7 +2,6 @@
 import { readdir, readFile, realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, parse } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { choice, TypeSafeClient } from '@typesafe-ai/sdk';
 
 export const MODEL = 'jev-1.13.0';
@@ -142,4 +141,8 @@ export async function main() {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(await realpath(process.argv[1]).catch(() => process.argv[1])).href) await main();
+// Normalize both paths alike, including symlinks and Windows short names.
+if (process.argv[1] &&
+    await realpath(process.argv[1]).catch(() => null) === await realpath(new URL(import.meta.url))) {
+  await main();
+}

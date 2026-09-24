@@ -51,7 +51,6 @@ SOFTWARE.
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, parse } from "node:path";
-import { pathToFileURL } from "node:url";
 
 // node_modules/@typesafe-ai/sdk/dist/index.mjs
 var requestIdFrom = (headers) => headers.get("x-typesafe-request-id") ?? void 0;
@@ -780,7 +779,9 @@ async function main() {
   } catch {
   }
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(await realpath(process.argv[1]).catch(() => process.argv[1])).href) await main();
+if (process.argv[1] && await realpath(process.argv[1]).catch(() => null) === await realpath(new URL(import.meta.url))) {
+  await main();
+}
 export {
   DEFER,
   INSTRUCTIONS,
