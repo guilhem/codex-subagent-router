@@ -1,5 +1,5 @@
 /** Route an unpinned native spawn through one Jev Choice request. */
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { readdir, readFile, realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, parse } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -142,4 +142,4 @@ export async function main() {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();
+if (process.argv[1] && import.meta.url === pathToFileURL(await realpath(process.argv[1]).catch(() => process.argv[1])).href) await main();

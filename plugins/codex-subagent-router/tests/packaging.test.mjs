@@ -65,14 +65,14 @@ function fixture(t) {
   const [handler] = group.hooks;
   assert.equal(handler.type, 'command');
   assert.equal(handler.timeout, 15);
-  const command = handler[windows ? 'commandWindows' : 'command'].replaceAll('${PLUGIN_ROOT}', installed);
-  function run(extraEnv = {}, input = event) {
+  function run(extraEnv = {}, input = event, pluginRoot = installed) {
+    const command = handler[windows ? 'commandWindows' : 'command'].replaceAll('${PLUGIN_ROOT}', pluginRoot);
     return spawnSync(shell, windows ? ['/d', '/s', '/c', `"${command}"`] : ['-c', command], {
       cwd: root, env: { ...env, ...extraEnv }, input: JSON.stringify(input), encoding: 'utf8',
       timeout: 5_000, windowsVerbatimArguments: windows,
     });
   }
-  return { root, bin, env, run };
+  return { root, installed, bin, env, run };
 }
 
 function expectRoute(result) {
@@ -100,6 +100,13 @@ test('installed bundle and SDK run with only the Codex runtime and preserve expl
   assert.equal(pinned.status, 0, pinned.stderr);
   assert.equal(pinned.stdout, '');
   assert.equal(pinned.stderr, '');
+});
+
+test('installed bundle runs when its parent directory is reached through a symlink', t => {
+  const { root, installed, run } = fixture(t);
+  const alias = join(root, 'plugin alias');
+  symlinkSync(installed, alias, windows ? 'junction' : 'dir');
+  expectRoute(run({ CODEX_MCP_NODE_PATH: process.execPath }, event, alias));
 });
 
 test('launcher discovers the desktop resource directory and cached runtime', t => {
