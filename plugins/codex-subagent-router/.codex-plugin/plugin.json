@@ -1,15 +1,15 @@
 {
   "name": "codex-subagent-router",
   "version": "0.1.0",
-  "description": "Choose native subagent models with Jev and declarative task profiles.",
+  "description": "AI model routing for Codex subagents. Let Jev choose the model and reasoning effort for each mission, using your own task profiles.",
   "author": {
     "name": "guilhem",
     "url": "https://github.com/guilhem"
   },
   "interface": {
     "displayName": "Codex Subagent Router",
-    "shortDescription": "Route unpinned subagents through configurable Jev choices.",
-    "longDescription": "A native PreToolUse hook reads task profiles from CODEX_HOME/subagent-router and asks Jev to choose model and effort. Explicit settings remain authoritative.",
+    "shortDescription": "Describe the mission. Let Jev pick the model.",
+    "longDescription": "Route native Codex subagents to a model and reasoning effort using Jev and your own JSON task profiles. A PreToolUse hook handles selection; explicit settings take precedence, and unavailable routing keeps native defaults.",
     "developerName": "guilhem",
     "category": "Productivity",
     "capabilities": [],
