@@ -49,13 +49,15 @@ is available. The launcher checks Codex's runtime locations before the system
 
 ### 2. Set your API key
 
-```sh
-export TYPESAFE_API_KEY="your-typesafe-api-key"
-```
+Create a plain-text file named `api-key` in `$CODEX_HOME/subagent-router/`, or
+`~/.codex/subagent-router/` when `CODEX_HOME` is unset or empty. Put only your
+TypeSafe API key in it, using an editor so the key does not enter shell history.
+On Linux and macOS, restrict the file to your user with `chmod 600`.
 
-Set this in the environment of the process that launches Codex. `JEV_API_KEY`
-is also supported; `TYPESAFE_API_KEY` takes precedence. The router never loads
-a workspace `.env` file.
+Alternatively, set `TYPESAFE_API_KEY` or `JEV_API_KEY` in the environment of
+the process that launches Codex. The router uses the first nonempty value in
+this order: `TYPESAFE_API_KEY`, `JEV_API_KEY`, then the `api-key` file. It never
+loads a workspace `.env` file.
 
 ### 3. Add your first profiles
 

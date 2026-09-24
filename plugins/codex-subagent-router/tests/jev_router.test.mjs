@@ -104,8 +104,9 @@ test('main preserves native input and prints chosen input', async t => {
 });
 
 test('explicit pins and unrelated inputs skip catalog and provider', async t => {
-  await fixture(t);
-  process.env.CODEX_HOME = join(process.env.CODEX_HOME, 'missing');
+  const { dir, warnings } = await fixture(t);
+  await writeFile(join(dir, 'api-key'), Buffer.from([0xff]));
+  delete process.env.TYPESAFE_API_KEY;
   const inputs = [
     null, [], {}, { hook_event_name: 'SubagentStart' }, event(undefined, { tool_name: 'Agent' }),
     event(undefined, { tool_name: 'multi_agent_v1__spawn_agent' }), event({ message: ' ' }),
@@ -118,8 +119,52 @@ test('explicit pins and unrelated inputs skip catalog and provider', async t => 
   ];
   const requests = transport(t, []);
   for (const input of inputs) assert.equal(await route(input), null);
+  assert.deepEqual(warnings, []);
+  process.env.CODEX_HOME = join(process.env.CODEX_HOME, 'missing');
+  assert.equal(await route(event()), null);
+  assert.deepEqual(warnings, []);
   assert.equal(requests.length, 0);
   assert.equal(missionFrom({ items: [{ type: 'text', text: ' Implement' }, { type: 'text', text: 'tests ' }] }), 'Implement\ntests');
+});
+
+test('file key is trimmed, ignored by profiles, and follows both environment keys', async t => {
+  const { dir, warnings } = await fixture(t);
+  const profiles = await loadProfiles();
+  await writeFile(join(dir, 'api-key'), '  file-secret\n');
+  assert.deepEqual([...await loadProfiles()].map(([id]) => id), [...profiles.keys()]);
+  const requests = transport(t, Array(4).fill({ status: 200, body: answer(profiles) }));
+  delete process.env.TYPESAFE_API_KEY;
+  assert.equal((await route(event())).hookSpecificOutput.updatedInput.model, 'custom/model-42');
+  process.env.JEV_API_KEY = 'jev-secret';
+  await route(event());
+  process.env.TYPESAFE_API_KEY = 'typesafe-secret';
+  await route(event());
+  process.env.TYPESAFE_API_KEY = '';
+  process.env.JEV_API_KEY = '';
+  await route(event());
+  assert.deepEqual(requests.map(request => request.init.headers.Authorization), [
+    'Bearer file-secret', 'Bearer jev-secret', 'Bearer typesafe-secret', 'Bearer file-secret',
+  ]);
+  assert.deepEqual(warnings, []);
+});
+
+test('missing, empty, unreadable, and malformed file keys keep native defaults privately', async t => {
+  const { dir, warnings } = await fixture(t);
+  delete process.env.TYPESAFE_API_KEY;
+  delete process.env.JEV_API_KEY;
+  const requests = transport(t, []);
+  const key = join(dir, 'api-key');
+  assert.equal(await route(event()), null);
+  await writeFile(key, ' \n ');
+  assert.equal(await route(event()), null);
+  await writeFile(key, Buffer.concat([Buffer.from('SECRET-file-key'), Buffer.from([0xff])]));
+  assert.equal(await route(event()), null);
+  await rm(key);
+  await mkdir(key);
+  assert.equal(await route(event()), null);
+  assert.deepEqual(warnings, Array(4).fill('Jev routing unavailable; using native spawn defaults.'));
+  assert.doesNotMatch(warnings.join(' '), /SECRET-file-key|api-key/);
+  assert.equal(requests.length, 0);
 });
 
 test('fresh profiles, SDK request, preserved input, defer, and special profile IDs', async t => {
